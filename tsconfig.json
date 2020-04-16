@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+      "target": "es6",
+      //"module": "commonjs",
+      "module": "none",
+      //"outDir": "out",
+      "outFile": "out/game.js",
+      "sourceMap": true,
+      "removeComments": true
+    },
+  }

@@ -24,33 +24,48 @@ function randomOrderForEach(seed, arr, func) {
     return seed;
 }
 
-const STUD_GRID_START_X = 125;
-const STUD_GRID_START_Y = 125;
+const STUD_GRID_START_X = 62.5;
+const STUD_GRID_START_Y = 62.5;
+const GRID_NUM_ROWS = 5;
+const GRID_NUM_COLS = 7;
+const SPAWN_VERTICAL_SPACING = 50;
+
+
 const CELL_DEFAULT_EMF = 12;
-const CIRCUIT_UPDATES_PER_FRAME = 10; //100 lags. BIGGER means less bounce (good)
+const CIRCUIT_UPDATES_PER_FRAME = 20; //100 lags. BIGGER means less bounce (good)
 const DEFAULT_CAPACITANCE = 0.5; //bigger means takes longer to charge. above 1 is unstable.
                                 //should be 100x resistance
-const DEFAULT_CONDUCTANCE = 0.001; //0.01 makes voltage drop across wires
-const CELL_CURRENT_LIMIT_FOR_FIRE = 100;
+const DEFAULT_STUD_CAPACITANCE = 0.1; //0.01 starts fires! but lower means less bounce (good)
+const DEFAULT_RESISTANCE = 1000; //0.01 leads to voltage drop across wires (bad)
+const DEFAULT_BULB_RESISTANCE = 100;
+
+const CELL_CURRENT_LIMIT_FOR_FIRE = 20; //100 does not trigger when short circuited
 const ELECTRON_SPEED = 5;
+const NUMBER_OF_ELECTRONS = 5; //up to 5 per wire
+
 const PHI = 0.61803398875;
-const SPAWN_VERTICAL_SPACING = 50;
 const CURRENT_MAGNIFYING_FACTOR = 1; //pointless
 const STUD_VOLTAGE_MEAN_SAMPLE_SIZE = 10; //10 is enough
+const ELECTRON_COLOR = "#0277bd";
+const FONT = "Verdana";
+
 
 abstract class DraggableComponent extends Phaser.GameObjects.Sprite {
-    isHor: boolean;
+    isHor: boolean = true;
     studA: Stud;
     studB: Stud;
     notYetInCircuit: boolean;
     capacitanceBoost: number = 0;
     electrons: Electron[] = [];
     prevCurrent = 0;
+    abstract causesElectronVoltageGain: boolean;
+    hoverRect;
 
     constructor(scene:Scene1,x,y,texture) {
         super(scene,x,y,texture); 
         scene.add.existing(this);
         this.notYetInCircuit = true;
+
 
         scene.input.setDraggable(this.setInteractive());
 
@@ -59,6 +74,16 @@ abstract class DraggableComponent extends Phaser.GameObjects.Sprite {
         this.on('dragend',this.dragEnd);
         this.on("destroy", this.onDestroy);
         this.on('pointerdown',this.onClick);
+        this.on("pointerover",(pointer) => {
+            if (!this.hoverRect) {
+                this.hoverRect = scene.add.rectangle(this.x,this.y,this.width,this.height).
+                    setRotation(this.rotation).
+                    setStrokeStyle(1, Phaser.Display.Color.GetColor(255,0,0));
+            }
+        });
+        this.on("pointerout", (pointer) => {
+            if (this.hoverRect) {this.hoverRect.destroy(); this.hoverRect = undefined; }
+        })
     }
 
     dragStart(pointer) {
@@ -69,14 +94,17 @@ abstract class DraggableComponent extends Phaser.GameObjects.Sprite {
 
         //remove from components that update  
         removeItemFromArray(this,this.scene.components);
+        //destroy electrons
+        this.electrons.forEach(e => { e.destroy(); });
+        this.electrons = [];
 
         if (this.studA) { this.studA.removeComponent(this); };
         if (this.studB) { this.studB.removeComponent(this); }
     }
 
     onDrag(pointer, dragX, dragY) {
-        let modX = dragX % 125;
-        let modY = dragY % 125;
+        let modX = (dragX - STUD_GRID_START_X) % 125;
+        let modY = (dragY - STUD_GRID_START_Y) % 125;
         this.isHor =  ((modX > modY) == (modX + modY < 125));
         if (this.isHor) {
             this.angle = 0;
@@ -88,68 +116,68 @@ abstract class DraggableComponent extends Phaser.GameObjects.Sprite {
             this.x = Phaser.Math.Snap.To(dragX, 125, STUD_GRID_START_X); 
             this.y = Phaser.Math.Snap.To(dragY, 125, STUD_GRID_START_Y - 62.5);
         }   
-
-        this.electrons.forEach(e => { e.visible = false;});
     }
 
     dragEnd(pointer) {
-        let coordsA = this.getStudA();
+        let coordsA = this.getStudACoords();
+        let coordsB = this.getStudBCoords();
+        if (coordsA == null || coordsB == null) { 
+            this.destroy();
+            return;
+        }
         this.studA = this.scene.studGrid[coordsA[0]][coordsA[1]];
-        let coordsB = this.getStudB();
         this.studB = this.scene.studGrid[coordsB[0]][coordsB[1]];
 
         //if a component is already in that place then replace it
         var alreadyThere = this.scene.components.filter(c => {
-                return c.studA == this.studA && c.studB == this.studB;
-            });
+            return c.studA == this.studA && c.studB == this.studB;
+        });
         for (var item of alreadyThere) {
-            removeItemFromArray(item,this.scene.components);
             item.destroy(); 
         }
 
-        //add electrons if not alrready there
-        if (this.electrons.length < 1) {
-            this.electrons.push(new Electron(this.scene, this.x, this.y, this, -50));
-            this.electrons.push(new Electron(this.scene, this.x, this.y, this, -25));    
-            this.electrons.push(new Electron(this.scene, this.x, this.y, this, 25));
-            this.electrons.push(new Electron(this.scene, this.x, this.y, this, 50));
-        }
-        else {
-            this.updateElectrons();
-            this.electrons.forEach(e => { e.visible = true;});
+        //renew electrons 
+        for (var i = 1; i < NUMBER_OF_ELECTRONS + 1; i++) {
+            var offset = - 62.5 + i * 125 / (NUMBER_OF_ELECTRONS+1)
+            this.electrons.push(new Electron(this.scene, this.x, this.y, this, offset));
         }
 
         //add to update components
-        if (this.studA != undefined && this.studB != undefined) {
-            this.scene.components.push(this);
-            this.studA.addComponent(this);
-            this.studB.addComponent(this);
-        }
-        else { //placed somewhere stupid
-            this.destroy();
-        }
+        this.scene.components.push(this);
+        this.studA.addComponent(this);
+        this.studB.addComponent(this);
     }
 
     onDestroy(item) {
+        if (this.hoverRect) { this.hoverRect.destroy(); }
+        removeItemFromArray(this,this.scene.components);
         item.electrons.forEach(e => e.destroy());
     }
 
     onClick(pointer) {
     }
 
-    getStudA() {
-        return [Math.floor((this.x - STUD_GRID_START_X) / 125),
+    //0-indexed
+    getStudACoords() {
+        var ret = [Math.floor((this.x - STUD_GRID_START_X) / 125),
             Math.floor((this.y - STUD_GRID_START_Y) / 125)];
+        if (ret[0] < 0 || ret[0] > GRID_NUM_COLS-1 || ret[1] < 0 || ret[1] > GRID_NUM_ROWS-1) {
+            return null;
+        }
+        return ret;
     }
 
-    getStudB() {
+    //0-indexed
+    getStudBCoords() {
+        var ACoords = this.getStudACoords();
+        if (ACoords == null) { return null; }
         if (this.isHor) {
-            return [Math.floor((this.x - STUD_GRID_START_X) / 125) + 1,
-                Math.floor((this.y - STUD_GRID_START_Y) / 125)];
+            if (ACoords[0] + 1 > GRID_NUM_COLS-1) { return null; }
+            return [ ACoords[0] + 1, ACoords[1]];
         }
         else {
-            return [Math.floor((this.x - STUD_GRID_START_X) / 125),
-                Math.floor((this.y - STUD_GRID_START_Y) / 125) + 1];
+            if (ACoords[1] + 1 > GRID_NUM_ROWS-1) { return null; }
+            return [ ACoords[0], ACoords[1] + 1];
         }
     }
 
@@ -163,15 +191,21 @@ abstract class DraggableComponent extends Phaser.GameObjects.Sprite {
 
 abstract class DraggableComponentWithText extends DraggableComponent {
     text: Phaser.GameObjects.Text;
-    constructor(scene,x,y,texture) {
+    value: number;
+    hoverRectText: any;
+    abstract unit;
+
+    constructor(scene,x,y,texture, value) {
         super(scene,x,y,texture);
-        this.text = this.scene.add.text(this.x, this.y, "", {
+        this.value = value;
+        this.text = new HoverText(this.scene, this.x, this.y, "", {
             fill:"#000",
             fontSize:"12px",
-            fontFamily:"Arial Black"
-          }).setVisible(false);
+            fontFamily:FONT
+          }, this);
+        this.text.setText(this.getText());
+        this.setTextPosition();
     }
-
 
     dragStart(pointer) {
         super.dragStart(pointer);
@@ -184,14 +218,15 @@ abstract class DraggableComponentWithText extends DraggableComponent {
         this.text.setVisible(true);
     }
 
-    updateElectrons() {
-        super.updateElectrons();
-        this.text.setText(this.getText());
-    }
 
     onDestroy(item) {
         this.text.destroy();
         super.onDestroy(item);
+    }
+
+    setValue(value) {
+        this.value = value;
+        this.text.setText(this.getText());
     }
 
     abstract updateStuds();
@@ -202,18 +237,19 @@ abstract class DraggableComponentWithText extends DraggableComponent {
 
 
 class Resistor extends DraggableComponentWithText {
-    conductance:number = DEFAULT_CONDUCTANCE;
+    causesElectronVoltageGain = true;
+    unit: "Ω";
 
-    constructor(scene,x,y) {
-        super(scene,x,y,"resistor");
+    constructor(scene,x,y, value = DEFAULT_RESISTANCE) {
+        super(scene,x,y,"resistor", value);
     }
 
     clone() {
-        return new Resistor(this.scene,this.x,this.y);
+        return new Resistor(this.scene,this.x,this.y, this.value);
     }
 
     updateStuds() {
-        let current = (this.studA.charge + this.prevCurrent - this.studB.charge) * this.conductance;
+        let current = (this.studA.voltage + this.prevCurrent - this.studB.voltage) / this.value;
         this.studA.charge -= current;
         this.studB.charge += current;
         this.prevCurrent = current;
@@ -222,41 +258,35 @@ class Resistor extends DraggableComponentWithText {
 
     getText() {
         // CURRENT_MAGNIFYING_FACTOR
-        return (1/this.conductance).toFixed(0)+"Ω";
+        return (this.value/1000).toFixed(1)+"kΩ";
     }
 
     setTextPosition() {
         if (this.isHor) {
-            this.text.setPosition(this.x-18,this.y-9).setAngle(0);
+            this.text.setPosition(this.x-16,this.y-25).setAngle(0);
         }
         else {
-            this.text.setPosition(this.x+9,this.y-15).setAngle(90);
+            this.text.setPosition(this.x+25,this.y-15).setAngle(90);
         }
     }
 }
 
-class Bulb extends DraggableComponent {
-    conductance:number = DEFAULT_CONDUCTANCE;
-
-    constructor(scene,x,y) {
-        super(scene,x,y,"bulb");
+class Bulb extends Resistor {
+    unit: "Ω";
+    constructor(scene,x,y,value = DEFAULT_BULB_RESISTANCE) {
+        super(scene,x,y,value);
+        this.setTexture("bulb");
     }
 
+    //override
     clone() {
-        return new Bulb(this.scene,this.x,this.y);
-    }
-
-    updateStuds() {
-        let current = (this.studA.charge + this.prevCurrent - this.studB.charge) * this.conductance;
-        this.studA.charge -= current;
-        this.studB.charge += current;
-        this.prevCurrent = current;
-        this.electrons.forEach(e => e.updateOffset(current));
+        return new Bulb(this.scene,this.x,this.y,this.value);
     }
 }
 
 
 class Wire extends DraggableComponent {
+    causesElectronVoltageGain = false;
     prevPrevCurrent = -10;
     charge: number = 0;
 
@@ -274,7 +304,7 @@ class Wire extends DraggableComponent {
         if (secondChange < 0.01) {secondChange = 1}
         if (secondChange > 0.01) {secondChange *= 100}
 
-        let current = (this.studA.charge + this.prevCurrent - this.studB.charge) / 2 / secondChange;
+        let current = (this.studA.voltage + this.prevCurrent - this.studB.voltage) / 2 ;
         this.studA.charge -= current;
         this.studB.charge += current;
         this.charge += current;
@@ -287,6 +317,7 @@ class Wire extends DraggableComponent {
 
 
 class Switch extends DraggableComponent {
+    causesElectronVoltageGain = false;
     _isOpen = true;
 
     constructor(scene,x,y) {
@@ -304,7 +335,7 @@ class Switch extends DraggableComponent {
 
     updateStuds() {
         if (!this._isOpen) {
-            let current = (this.studA.charge + this.prevCurrent - this.studB.charge) / 2;
+            let current = (this.studA.voltage + this.prevCurrent - this.studB.voltage) / 2;
             this.studA.charge -= current;
             this.studB.charge += current;
             this.prevCurrent = current;
@@ -314,19 +345,20 @@ class Switch extends DraggableComponent {
 }
 
 class Capacitor extends DraggableComponentWithText {
+    unit: "F";
+    causesElectronVoltageGain = false;
     charge = 0;
-    capacitance = DEFAULT_CAPACITANCE;
 
-    constructor(scene,x,y) {
-        super(scene,x,y,"capacitor");
+    constructor(scene,x,y,value = DEFAULT_CAPACITANCE) {
+        super(scene,x,y,"capacitor",value);
     }
 
     clone() {
-        return new Capacitor(this.scene,this.x,this.y);
+        return new Capacitor(this.scene,this.x,this.y,this.value);
     }
 
     updateStuds() {
-        let current = (this.studA.charge + this.prevCurrent - this.studB.charge - this.charge) * this.capacitance;
+        let current = (this.studA.voltage + this.prevCurrent - this.studB.voltage - this.charge) * this.value;
         this.studA.charge -= current;
         this.studB.charge += current;
         this.charge += current;
@@ -335,7 +367,7 @@ class Capacitor extends DraggableComponentWithText {
     }
 
     getText() {
-        return (1000*this.capacitance).toFixed(0) + "mF";
+        return (1000*this.value).toFixed(0) + "mF";
     }
     setTextPosition() {
         if (this.isHor) {
@@ -348,31 +380,32 @@ class Capacitor extends DraggableComponentWithText {
 }
 
 class Cell extends DraggableComponentWithText {
-    EMF: number = CELL_DEFAULT_EMF;
+    unit: "V";
+    causesElectronVoltageGain = true;
     fire = null;
     _isReversed = false;
     prevPrevCurrent = -10;
     charge: number;
 
-    constructor(scene,x,y) {
-        super(scene,x,y,"cell");
+    constructor(scene,x,y, value = CELL_DEFAULT_EMF) {
+        super(scene,x,y,"cell",value);
     }
     
     onClick(pointer) {
         this._isReversed = !this._isReversed;
         this.setFlipX(this._isReversed);
-        this.EMF *= -1;
+        this.value *= -1;
     }
 
     clone() {
-        return new Cell(this.scene,this.x,this.y);
+        return new Cell(this.scene,this.x,this.y, this.value);
     }
 
     updateStuds() {
         if (!this.fire) {
             //var secondChange = this.prevCurrent - this.prevPrevCurrent;
             
-            let current = (this.studA.charge + this.prevCurrent - this.studB.charge - this.EMF) / 2;
+            let current = (this.studA.voltage + this.prevCurrent - this.studB.voltage - this.value) / 2;
             this.studA.charge -= current;
             this.studB.charge += current;
 
@@ -389,7 +422,7 @@ class Cell extends DraggableComponentWithText {
     }
 
     getText() {
-        return Math.abs(this.EMF).toFixed(0)+"V";
+        return Math.abs(this.value).toFixed(0)+"V";
     }
 
     setTextPosition() {
@@ -397,19 +430,27 @@ class Cell extends DraggableComponentWithText {
             this.text.setPosition(this.x-5,this.y-25).setAngle(0);
         }
         else {
-            this.text.setPosition(this.x+15,this.y).setAngle(90);
+            this.text.setPosition(this.x+25,this.y-10).setAngle(90);
         }
     }
 
+    //overridden because value is negative when reversed  
+    setValue(value) {
+        this.value = value * (this._isReversed ? -1: 1);
+        this.text.setText(this.getText());
+    }
 }
 
 
 
 class Ammeter extends DraggableComponentWithText {
+    unit: "";
+    causesElectronVoltageGain = false;
     averagedCurrent = 0;
 
     constructor(scene,x,y) {
-        super(scene,x,y,"ammeter");
+        super(scene,x,y,"ammeter",0);
+        this.text.removeInteractive();
     }
 
     clone() {
@@ -417,7 +458,7 @@ class Ammeter extends DraggableComponentWithText {
     }
 
     updateStuds() {
-        let current = (this.studA.charge + this.prevCurrent - this.studB.charge) / 2;
+        let current = (this.studA.voltage + this.prevCurrent - this.studB.voltage) / 2;
         this.studA.charge -= current;
         this.studB.charge += current;
         this.prevCurrent = current;
@@ -435,13 +476,26 @@ class Ammeter extends DraggableComponentWithText {
         }
     }
 
-    getText() { return Math.abs(this.averagedCurrent*CURRENT_MAGNIFYING_FACTOR*1000).toFixed(0)+"mA" };
+    getText() { 
+        if (this.studA && this.studB) {
+            return Math.abs(this.averagedCurrent*CURRENT_MAGNIFYING_FACTOR*1000).toFixed(0)+"mA" ;
+        }
+    };
+
+    //overloaded by ammeter and voltmeter
+    updateElectrons() {
+        super.updateElectrons();
+        this.text.setText(this.getText());
+    }
 }
 
 
 class Voltmeter extends DraggableComponentWithText {
+    unit: "";
+    causesElectronVoltageGain = false;
     constructor(scene,x,y) {
-        super(scene,x,y,"voltmeter");
+        super(scene,x,y,"voltmeter",0);
+        this.text.removeInteractive();
     }
 
     clone() {
@@ -462,7 +516,16 @@ class Voltmeter extends DraggableComponentWithText {
     }
 
     getText() {
-        var pd = this.studA.charge - this.studB.charge;
-        return Math.abs(pd).toFixed(2)+"V";
+        if (this.studA && this.studB) {
+            var pd = this.studA.voltage - this.studB.voltage;
+            return Math.abs(pd).toFixed(2)+"V";
+        }
+        return "";
+    }
+
+    //overloaded by ammeter and voltmeter
+    updateElectrons() {
+        super.updateElectrons();
+        this.text.setText(this.getText());
     }
 }

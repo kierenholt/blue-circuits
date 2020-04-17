@@ -4,6 +4,7 @@ class Stud extends Phaser.GameObjects.Sprite {
     _charge: number = 0;
     voltageText: Phaser.GameObjects.Text;
     random = PHI;
+    capacitance = DEFAULT_STUD_CAPACITANCE;
 
     connectedComponents  = {
         "top": null, "bottom": null, "right": null, "left": null  
@@ -13,21 +14,21 @@ class Stud extends Phaser.GameObjects.Sprite {
         super(scene,x,y,"stud");
         scene.add.existing(this);
 
-        this.voltageText = this.scene.add.text(this.x, this.y, "", {
+        this.voltageText = this.scene.add.text(this.x-25, this.y-20, "", {
             fill:"#000",
             fontSize:"12px",
-            fontFamily:"Arial Black"
+            fontFamily:FONT
           }).setVisible(false);
-        Phaser.Display.Bounds.CenterOn(this.voltageText, this.x-20, this.y-20);
-
     }
     
+    get voltage() { return this._charge / this.capacitance }
+
     get charge() { return this._charge; }
 
     set charge(value) {      
         this._charge = ((STUD_VOLTAGE_MEAN_SAMPLE_SIZE -1)*this._charge + value)/STUD_VOLTAGE_MEAN_SAMPLE_SIZE ;
 
-        this.voltageText.setText(this._charge < 0.05 ? "0V" : this._charge.toFixed(1)+"V"); 
+        this.voltageText.setText(this.voltage < 0.05 ? "0V" : this.voltage.toFixed(1)+"V"); 
     }
 
     getComponentDirection(c) {

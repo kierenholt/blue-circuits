@@ -2,6 +2,7 @@
 class Electron extends Phaser.GameObjects.Sprite {
     offset = 0; //add up current at each component
     component: DraggableComponent = null;
+    prevOffset = 0;
 
     constructor(scene,x,y,paramComponent,paramOffset) {  
         super(scene, x, y, "electron");
@@ -27,9 +28,14 @@ class Electron extends Phaser.GameObjects.Sprite {
 
     //called every calculation
     updateOffset(current) {
+        this.prevOffset = this.offset;
         this.offset += current * ELECTRON_SPEED;
 
-        
+        //EMIT ELECTRON IF PASSING THROUGH OFFSET 62.5
+        if ((this.offset < 0) != (this.prevOffset < 0) && this.component.causesElectronVoltageGain) {
+            this.gainVoltage(current > 0);
+        }
+
         var possibleComponents = [];
         var stud = null;
         var extraOffset = null; 
@@ -42,7 +48,7 @@ class Electron extends Phaser.GameObjects.Sprite {
             extraOffset = -62.5 - this.offset;
         }
         else {
-            return; //offset is between 0 and 125 so do not move components!
+            return; //offset is between 0 and 125 so do not move to a different component
         }
         var nextChosen;
         [nextChosen,this.offset]  = stud.nextComponentForElectron(extraOffset);
@@ -59,4 +65,25 @@ class Electron extends Phaser.GameObjects.Sprite {
         //this.updatePosition(nextChosen.x,nextChosen.y,nextChosen.isHor);
     }
 
+    gainVoltage(currentIsPositive) {
+        var diff = (currentIsPositive ? -1 : 1) * (this.component.studA.voltage - this.component.studB.voltage);
+        var text =  ((diff > 0) ? "+" : "") + diff.toFixed(1)+"V"; 
+        var tb = this.scene.add.text(this.x-5, this.y-5, text, {
+            fill:ELECTRON_COLOR ,
+            fontSize:"12px",
+            fontFamily:FONT
+          });
+        var tween = this.scene.tweens.add({
+            targets: tb,
+            x: this.x-50,
+            y: this.y-50,
+            ease: 'Cubic.easeOut',
+            duration: 2000,
+            yoyo: false,
+            repeat: 0,
+            onComplete:  () =>  { 
+                tb.destroy(); 
+            }
+        });
+    }
 }

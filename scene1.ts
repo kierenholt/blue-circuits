@@ -45,7 +45,6 @@ class Scene1 extends Phaser.Scene {
     create () {
         this.cameras.main.setBackgroundColor('#ffffff');
 
-
         this.anims.create({ key: 'allFire', 
             frames: this.anims.generateFrameNames('fire'), 
             repeat: -1,
@@ -53,24 +52,25 @@ class Scene1 extends Phaser.Scene {
         });
 
         //draw grid
-        this.studGrid = [[],[],[],[],[],[]];
-        
-        for (var i = 0; i < 6; i++) {
-            for (var j = 0; j < 6; j++) {
+        this.studGrid = [];
+        for (var i = 0; i < GRID_NUM_COLS; i++) {
+            this.studGrid.push([]);
+            for (var j = 0; j < GRID_NUM_ROWS; j++) {
                 this.studGrid[i][j] = new Stud(this,STUD_GRID_START_X+i*125,STUD_GRID_START_Y+j*125);
             }
         }
 
         //draggable components
+        var spawnX = 1000;
         var spawnY = 150;
-        new Resistor(this,850,spawnY);
-        new Wire(this,850,spawnY += SPAWN_VERTICAL_SPACING);
-        new Cell(this,850,spawnY += SPAWN_VERTICAL_SPACING);
-        new Capacitor(this,850,spawnY += SPAWN_VERTICAL_SPACING);
-        new Switch(this,850,spawnY += SPAWN_VERTICAL_SPACING);
-        new Bulb(this,850,spawnY += SPAWN_VERTICAL_SPACING);
-        new Voltmeter(this,850,spawnY += SPAWN_VERTICAL_SPACING);
-        new Ammeter(this,850,spawnY += SPAWN_VERTICAL_SPACING);
+        new Resistor(this,spawnX,spawnY);
+        new Wire(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
+        new Cell(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
+        new Capacitor(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
+        new Switch(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
+        new Bulb(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
+        new Voltmeter(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
+        new Ammeter(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
 
 
 
@@ -93,8 +93,8 @@ class Scene1 extends Phaser.Scene {
 
         //recalibrate all studs to zero
         var minStud = this.studGrid[0][0];
-        for (var i = 0; i < 6; i++) {
-            for (var j = 0; j < 6; j++) {
+        for (var i = 0; i < GRID_NUM_COLS; i++) {
+            for (var j = 0; j < GRID_NUM_ROWS; j++) {
                 if (this.studGrid[i][j].voltageText.visible && this.studGrid[i][j].charge < minStud.charge) {
                     minStud = this.studGrid[i][j];
                 }
@@ -120,4 +120,6 @@ class Scene1 extends Phaser.Scene {
             })
         })
     }
+
+
 }

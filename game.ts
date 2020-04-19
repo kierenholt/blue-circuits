@@ -3,8 +3,8 @@ class myGame extends Phaser.Game {
   constructor() {
     let config = {
     
-      type    : Phaser.AUTO,
-      width   : 1200,
+      type    : Phaser.CANVAS,
+      width   : 850,
       height  : 750,
           
       autoFocus: true,
@@ -12,13 +12,16 @@ class myGame extends Phaser.Game {
       backgroundColor: '#ffffff',
       parent  : 'gameDiv',
       
-      url     : 'http//url.to.game',
-      title   : 'Title Goes Here',
+      url     : 'http//www.teachometer.co.uk/blue-circuit-simulator.html',
+      title   : 'Blue Circuit simulator',
       version : '0.0.1', 
 
-      scene   : [ new Scene1() ]
+      scene   : [ new Scene1() ],
+
+      canvas: document.getElementById("game") as HTMLCanvasElement
     };
     super(config);
+
   }
 }
   

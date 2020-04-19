@@ -3,11 +3,13 @@ class Electron extends Phaser.GameObjects.Sprite {
     offset = 0; //add up current at each component
     component: DraggableComponent = null;
     prevOffset = 0;
+    scene: Scene1;
 
     constructor(scene,x,y,paramComponent,paramOffset) {  
         super(scene, x, y, "electron");
+        this.scene = scene;
         scene.add.existing(this);
-        this.depth = -1;
+        this.setDepth(-2);
         this.component = paramComponent;
         this.offset = paramOffset;
         //this.setScale(2);
@@ -29,7 +31,7 @@ class Electron extends Phaser.GameObjects.Sprite {
     //called every calculation
     updateOffset(current) {
         this.prevOffset = this.offset;
-        this.offset += current * ELECTRON_SPEED;
+        this.offset += current * this.scene.ELECTRON_SPEED * (this.scene.ELECTRONS_ARE_POSITIVE ? 1 : -1);
 
         //EMIT ELECTRON IF PASSING THROUGH OFFSET 62.5
         if ((this.offset < 0) != (this.prevOffset < 0) && this.component.causesElectronVoltageGain) {
@@ -70,7 +72,7 @@ class Electron extends Phaser.GameObjects.Sprite {
         var text =  ((diff > 0) ? "+" : "") + diff.toFixed(1)+"V"; 
         var tb = this.scene.add.text(this.x-5, this.y-5, text, {
             fill:ELECTRON_COLOR ,
-            fontSize:"12px",
+            fontSize:this.scene.FONT_SIZE.toString() + "px",
             fontFamily:FONT
           });
         var tween = this.scene.tweens.add({

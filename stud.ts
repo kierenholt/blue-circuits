@@ -5,6 +5,7 @@ class Stud extends Phaser.GameObjects.Sprite {
     voltageText: Phaser.GameObjects.Text;
     random = PHI;
     capacitance = DEFAULT_STUD_CAPACITANCE;
+    scene: Scene1;
 
     connectedComponents  = {
         "top": null, "bottom": null, "right": null, "left": null  
@@ -13,12 +14,15 @@ class Stud extends Phaser.GameObjects.Sprite {
     constructor(scene,x,y) {
         super(scene,x,y,"stud");
         scene.add.existing(this);
+        this.scene = scene;
 
         this.voltageText = this.scene.add.text(this.x-25, this.y-20, "", {
             fill:"#000",
-            fontSize:"12px",
+            fontSize:this.scene.FONT_SIZE.toString() + "px",
             fontFamily:FONT
           }).setVisible(false);
+        
+        this.scene.textObjects.push(this.voltageText);
     }
     
     get voltage() { return this._charge / this.capacitance }
@@ -45,36 +49,48 @@ class Stud extends Phaser.GameObjects.Sprite {
         if (!c[dir]) {
             this.connectedComponents[dir] = c;
         }
-        this.voltageText.setVisible(true);
+        if (this.scene.SHOW_STUD_VOLTAGES) { this.voltageText.setVisible(true); }
     }
 
     removeComponent(c) {
         var dir = this.getComponentDirection(c);
         this.connectedComponents[dir] = null;
-        if (!objectSome(this.connectedComponents,item => item != null)) {
+        if (!this.hasAnyComponents()) {
             this.voltageText.setVisible(false);
         }
+    }
+
+    hasAnyComponents() {
+        return objectSome(this.connectedComponents,item => item != null);
     }
 
     nextComponentForElectron(extraOffset) {
         var ret = [];
         var currents = [];
-        if (this.connectedComponents["top"] && this.connectedComponents["top"].prevCurrent < 0) 
+        if (this.connectedComponents["top"] && 
+        (this.scene.ELECTRONS_ARE_POSITIVE ? this.connectedComponents["top"].prevCurrent < 0 : this.connectedComponents["top"].prevCurrent > 0) 
+        )
             { 
                 ret.push([this.connectedComponents["top"],62.5-extraOffset]);
                 currents.push(Math.abs(this.connectedComponents["top"].prevCurrent));
             };
-        if (this.connectedComponents["right"] && this.connectedComponents["right"].prevCurrent > 0) 
+        if (this.connectedComponents["right"] && 
+        (this.scene.ELECTRONS_ARE_POSITIVE ? this.connectedComponents["right"].prevCurrent > 0 :  this.connectedComponents["right"].prevCurrent < 0) 
+        )
             { 
                 ret.push([this.connectedComponents["right"],-62.5+extraOffset]);
                 currents.push(Math.abs(this.connectedComponents["right"].prevCurrent));
             };
-        if (this.connectedComponents["bottom"] && this.connectedComponents["bottom"].prevCurrent > 0) 
+        if (this.connectedComponents["bottom"] && 
+        (this.scene.ELECTRONS_ARE_POSITIVE ?  this.connectedComponents["bottom"].prevCurrent > 0 :  this.connectedComponents["bottom"].prevCurrent < 0) 
+        )
             { 
                 ret.push([this.connectedComponents["bottom"],-62.5+extraOffset])
                 currents.push(Math.abs(this.connectedComponents["bottom"].prevCurrent));
             };
-        if (this.connectedComponents["left"] && this.connectedComponents["left"].prevCurrent < 0) 
+        if (this.connectedComponents["left"] && 
+        (this.scene.ELECTRONS_ARE_POSITIVE ? this.connectedComponents["left"].prevCurrent < 0 : this.connectedComponents["left"].prevCurrent > 0)
+        ) 
             { 
                 ret.push([this.connectedComponents["left"],62.5-extraOffset])
                 currents.push(Math.abs(this.connectedComponents["left"].prevCurrent));

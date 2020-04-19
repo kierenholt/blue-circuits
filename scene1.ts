@@ -2,13 +2,20 @@
 
 
 class Scene1 extends Phaser.Scene {
-    studGrid: any[][];
-    components: DraggableComponent[] = [];
-    key_W: Phaser.Input.Keyboard.Key;
-    key_S: any;
-    ts: Phaser.GameObjects.TileSprite;
+    studGrid: Stud[][];
+    activeComponents: DraggableComponent[] = [];
+    dummyComponents: DraggableComponent[] = [];
+    textObjects: Phaser.GameObjects.Text[] = [];
+    electrons: Electron[] = [];
     pos: number;
     seed = 0;
+
+    ELECTRONS_ARE_POSITIVE = false; //IMMEDIATELY EFFECTIVE
+    ELECTRON_SPEED = 5; //IMMEDIATELY EFFECTIVE
+    NUMBER_OF_ELECTRONS = 5; //up to 5 per wire, REQUIRES REFRESH ALL COMPONENTS
+    FONT_SIZE = 12; //REQUIRES REFRESH STUD AND COMPONENT AND ELECTRON FONTS
+    SHOW_STUD_VOLTAGES = false; //REQUIRES REFRESH STUD FONTS
+    SHOW_STUDS = true; //REQUIRES REFRESH
     
     constructor() {
         super({
@@ -61,33 +68,27 @@ class Scene1 extends Phaser.Scene {
         }
 
         //draggable components
-        var spawnX = 1000;
-        var spawnY = 150;
-        new Resistor(this,spawnX,spawnY);
-        new Wire(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
-        new Cell(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
-        new Capacitor(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
-        new Switch(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
-        new Bulb(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
-        new Voltmeter(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
-        new Ammeter(this,spawnX,spawnY += SPAWN_VERTICAL_SPACING);
-
-
-
+        new Resistor(this,SPAWN_X,SPAWN_Y);
+        new Wire(this,SPAWN_X,SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Cell(this,SPAWN_X,SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Capacitor(this,SPAWN_X,SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Switch(this,SPAWN_X,SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Bulb(this,SPAWN_X,SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Voltmeter(this,SPAWN_X,SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Ammeter(this,SPAWN_X,SPAWN_Y += SPAWN_VERTICAL_SPACING);
 
     }
 
     update () {
-
         //recalculate voltages MANY TIMES
-        if (this.components.length > 0) {
+        if (this.activeComponents.length > 0) {
             for (var i = 0; i < CIRCUIT_UPDATES_PER_FRAME; i++) {
-                this.seed = randomOrderForEach(this.seed,this.components,c => c.updateStuds());
+                this.seed = randomOrderForEach(this.seed,this.activeComponents,c => c.updateStuds());
             }
         }
 
         //update electrons ONCE
-        this.components.forEach( c => {
+        this.activeComponents.forEach( c => {
             c.updateElectrons();
         });
 
@@ -121,5 +122,42 @@ class Scene1 extends Phaser.Scene {
         })
     }
 
+    setNumberOfElectrons(value:number) {
+        this.NUMBER_OF_ELECTRONS = value;
+        for (var c of this.activeComponents) {
+            c.electrons.forEach(e => { e.destroy(); });
+            c.electrons = [];
+            c.createNewElectrons();
+        }
+    }
 
+    setFontSize(value:number) {
+        this.FONT_SIZE = value;
+        for (var t of this.textObjects) {
+            t.setFontSize(this.FONT_SIZE);
+        }
+    }
+
+    setStudVoltageVisible(value: boolean) {
+        this.SHOW_STUD_VOLTAGES = value;
+        for (var i = 0; i < GRID_NUM_COLS; i++) {
+            for (var j = 0; j < GRID_NUM_ROWS; j++) {
+                if (this.SHOW_STUD_VOLTAGES) {
+                    this.studGrid[i][j].voltageText.setVisible(this.studGrid[i][j].hasAnyComponents());
+                }
+                else {
+                    this.studGrid[i][j].voltageText.setVisible(false);
+                }
+            }
+        }
+    }
+
+    setStudVisible(value: boolean) {
+        this.SHOW_STUDS = value;
+        for (var i = 0; i < GRID_NUM_COLS; i++) {
+            for (var j = 0; j < GRID_NUM_ROWS; j++) {
+                this.studGrid[i][j].setVisible(this.SHOW_STUDS);
+            }
+        }
+    }
 }

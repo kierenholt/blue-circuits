@@ -1,3 +1,6 @@
+function isNumeric(n) {
+    return !isNaN(parseFloat(n)) && isFinite(n);
+}
 function removeItemFromArray(item, array) {
     let index = array.indexOf(item);
     if (index > -1) {
@@ -23,8 +26,10 @@ function randomOrderForEach(seed, arr, func) {
 const STUD_GRID_START_X = 62.5;
 const STUD_GRID_START_Y = 62.5;
 const GRID_NUM_ROWS = 5;
-const GRID_NUM_COLS = 7;
-const SPAWN_VERTICAL_SPACING = 50;
+const GRID_NUM_COLS = 5;
+const SPAWN_VERTICAL_SPACING = 62.5;
+const SPAWN_X = 750;
+var SPAWN_Y = 62.5;
 const CELL_DEFAULT_EMF = 12;
 const CIRCUIT_UPDATES_PER_FRAME = 20;
 const DEFAULT_CAPACITANCE = 0.5;
@@ -32,24 +37,24 @@ const DEFAULT_STUD_CAPACITANCE = 0.1;
 const DEFAULT_RESISTANCE = 1000;
 const DEFAULT_BULB_RESISTANCE = 100;
 const CELL_CURRENT_LIMIT_FOR_FIRE = 20;
-const ELECTRON_SPEED = 5;
-const NUMBER_OF_ELECTRONS = 5;
+const BULB_CIRCLE_SIZE = 0.05;
 const PHI = 0.61803398875;
-const CURRENT_MAGNIFYING_FACTOR = 1;
 const STUD_VOLTAGE_MEAN_SAMPLE_SIZE = 10;
+const AMMETER_MEAN_SAMPLE_SIZE = 500;
 const ELECTRON_COLOR = "#0277bd";
 const FONT = "Verdana";
 class DraggableComponent extends Phaser.GameObjects.Sprite {
     constructor(scene, x, y, texture) {
         super(scene, x, y, texture);
         this.isHor = true;
+        this.isDragging = false;
         this.capacitanceBoost = 0;
         this.electrons = [];
         this.prevCurrent = 0;
+        this.scene = scene;
         scene.add.existing(this);
         this.notYetInCircuit = true;
         scene.input.setDraggable(this.setInteractive());
-        this.on('dragstart', this.dragStart);
         this.on('drag', this.onDrag);
         this.on('dragend', this.dragEnd);
         this.on("destroy", this.onDestroy);
@@ -68,23 +73,24 @@ class DraggableComponent extends Phaser.GameObjects.Sprite {
             }
         });
     }
-    dragStart(pointer) {
-        if (this.notYetInCircuit) {
-            this.notYetInCircuit = false;
-            this.scene.add.existing(this.clone());
-        }
-        removeItemFromArray(this, this.scene.components);
-        this.electrons.forEach(e => { e.destroy(); });
-        this.electrons = [];
-        if (this.studA) {
-            this.studA.removeComponent(this);
-        }
-        ;
-        if (this.studB) {
-            this.studB.removeComponent(this);
-        }
-    }
     onDrag(pointer, dragX, dragY) {
+        if (!this.isDragging) {
+            this.isDragging = true;
+            if (this.notYetInCircuit) {
+                this.notYetInCircuit = false;
+                this.scene.add.existing(this.clone());
+            }
+            removeItemFromArray(this, this.scene.activeComponents);
+            this.electrons.forEach(e => { e.destroy(); });
+            this.electrons = [];
+            if (this.studA) {
+                this.studA.removeComponent(this);
+            }
+            ;
+            if (this.studB) {
+                this.studB.removeComponent(this);
+            }
+        }
         let modX = (dragX - STUD_GRID_START_X) % 125;
         let modY = (dragY - STUD_GRID_START_Y) % 125;
         this.isHor = ((modX > modY) == (modX + modY < 125));
@@ -100,6 +106,9 @@ class DraggableComponent extends Phaser.GameObjects.Sprite {
         }
     }
     dragEnd(pointer) {
+        if (!this.isDragging) {
+            return;
+        }
         let coordsA = this.getStudACoords();
         let coordsB = this.getStudBCoords();
         if (coordsA == null || coordsB == null) {
@@ -108,25 +117,30 @@ class DraggableComponent extends Phaser.GameObjects.Sprite {
         }
         this.studA = this.scene.studGrid[coordsA[0]][coordsA[1]];
         this.studB = this.scene.studGrid[coordsB[0]][coordsB[1]];
-        var alreadyThere = this.scene.components.filter(c => {
+        var alreadyThere = this.scene.activeComponents.filter(c => {
             return c.studA == this.studA && c.studB == this.studB;
         });
         for (var item of alreadyThere) {
             item.destroy();
         }
-        for (var i = 1; i < NUMBER_OF_ELECTRONS + 1; i++) {
-            var offset = -62.5 + i * 125 / (NUMBER_OF_ELECTRONS + 1);
-            this.electrons.push(new Electron(this.scene, this.x, this.y, this, offset));
-        }
-        this.scene.components.push(this);
+        this.createNewElectrons();
+        this.scene.activeComponents.push(this);
         this.studA.addComponent(this);
         this.studB.addComponent(this);
+        this.isDragging = false;
+    }
+    createNewElectrons() {
+        console.log(this.scene.NUMBER_OF_ELECTRONS);
+        for (var i = 0; i < this.scene.NUMBER_OF_ELECTRONS; i++) {
+            var offset = -62.5 + (i + 0.5) * 125 / this.scene.NUMBER_OF_ELECTRONS;
+            this.electrons.push(new Electron(this.scene, this.x, this.y, this, offset));
+        }
     }
     onDestroy(item) {
         if (this.hoverRect) {
             this.hoverRect.destroy();
         }
-        removeItemFromArray(this, this.scene.components);
+        removeItemFromArray(this, this.scene.activeComponents);
         item.electrons.forEach(e => e.destroy());
     }
     onClick(pointer) {
@@ -167,7 +181,7 @@ class DraggableComponentWithText extends DraggableComponent {
         this.value = value;
         this.text = new HoverText(this.scene, this.x, this.y, "", {
             fill: "#000",
-            fontSize: "12px",
+            fontSize: this.scene.FONT_SIZE.toString() + "px",
             fontFamily: FONT
         }, this);
         this.text.setText(this.getText());
@@ -195,6 +209,7 @@ class Resistor extends DraggableComponentWithText {
     constructor(scene, x, y, value = DEFAULT_RESISTANCE) {
         super(scene, x, y, "resistor", value);
         this.causesElectronVoltageGain = true;
+        this.unit = "Ω";
     }
     clone() {
         return new Resistor(this.scene, this.x, this.y, this.value);
@@ -221,10 +236,41 @@ class Resistor extends DraggableComponentWithText {
 class Bulb extends Resistor {
     constructor(scene, x, y, value = DEFAULT_BULB_RESISTANCE) {
         super(scene, x, y, value);
+        this.unit = "Ω";
+        this.averagedCurrent = 0;
         this.setTexture("bulb");
+        this.circle = this.scene.add.circle(this.x, this.y, 100, Phaser.Display.Color.GetColor(255, 255, 0), 1).
+            setDepth(-1).setVisible(false).setAlpha(0.5);
     }
     clone() {
         return new Bulb(this.scene, this.x, this.y, this.value);
+    }
+    dragStart(pointer) {
+        super.dragStart(pointer);
+        this.circle.setVisible(false);
+    }
+    dragEnd(pointer) {
+        super.dragEnd(pointer);
+        this.circle.setPosition(this.x, this.y);
+        this.circle.setScale(0, 0);
+        this.circle.setVisible(true);
+    }
+    onDestroy(item) {
+        this.circle.destroy();
+        super.onDestroy(item);
+    }
+    updateStuds() {
+        let current = (this.studA.voltage + this.prevCurrent - this.studB.voltage) / this.value;
+        this.studA.charge -= current;
+        this.studB.charge += current;
+        this.prevCurrent = current;
+        this.electrons.forEach(e => e.updateOffset(current));
+        this.averagedCurrent = ((AMMETER_MEAN_SAMPLE_SIZE - 1) * this.averagedCurrent + current) / AMMETER_MEAN_SAMPLE_SIZE;
+    }
+    updateElectrons() {
+        super.updateElectrons();
+        var size = Math.abs(this.averagedCurrent * this.value * BULB_CIRCLE_SIZE);
+        this.circle.setScale(size, size);
     }
 }
 class Wire extends DraggableComponent {
@@ -280,6 +326,7 @@ class Switch extends DraggableComponent {
 class Capacitor extends DraggableComponentWithText {
     constructor(scene, x, y, value = DEFAULT_CAPACITANCE) {
         super(scene, x, y, "capacitor", value);
+        this.unit = "F";
         this.causesElectronVoltageGain = false;
         this.charge = 0;
     }
@@ -309,6 +356,7 @@ class Capacitor extends DraggableComponentWithText {
 class Cell extends DraggableComponentWithText {
     constructor(scene, x, y, value = CELL_DEFAULT_EMF) {
         super(scene, x, y, "cell", value);
+        this.unit = "V";
         this.causesElectronVoltageGain = true;
         this.fire = null;
         this._isReversed = false;
@@ -359,6 +407,7 @@ class Cell extends DraggableComponentWithText {
 class Ammeter extends DraggableComponentWithText {
     constructor(scene, x, y) {
         super(scene, x, y, "ammeter", 0);
+        this.unit = "";
         this.causesElectronVoltageGain = false;
         this.averagedCurrent = 0;
         this.text.removeInteractive();
@@ -372,7 +421,7 @@ class Ammeter extends DraggableComponentWithText {
         this.studB.charge += current;
         this.prevCurrent = current;
         this.electrons.forEach(e => e.updateOffset(current));
-        this.averagedCurrent = (199 * this.averagedCurrent + current) / 200;
+        this.averagedCurrent = ((AMMETER_MEAN_SAMPLE_SIZE - 1) * this.averagedCurrent + current) / AMMETER_MEAN_SAMPLE_SIZE;
     }
     setTextPosition() {
         if (this.isHor) {
@@ -384,7 +433,7 @@ class Ammeter extends DraggableComponentWithText {
     }
     getText() {
         if (this.studA && this.studB) {
-            return Math.abs(this.averagedCurrent * CURRENT_MAGNIFYING_FACTOR * 1000).toFixed(0) + "mA";
+            return Math.abs(this.averagedCurrent * 1000).toFixed(0) + "mA";
         }
     }
     ;
@@ -396,6 +445,7 @@ class Ammeter extends DraggableComponentWithText {
 class Voltmeter extends DraggableComponentWithText {
     constructor(scene, x, y) {
         super(scene, x, y, "voltmeter", 0);
+        this.unit = "";
         this.causesElectronVoltageGain = false;
         this.text.removeInteractive();
     }
@@ -431,8 +481,9 @@ class Electron extends Phaser.GameObjects.Sprite {
         this.offset = 0;
         this.component = null;
         this.prevOffset = 0;
+        this.scene = scene;
         scene.add.existing(this);
-        this.depth = -1;
+        this.setDepth(-2);
         this.component = paramComponent;
         this.offset = paramOffset;
     }
@@ -448,7 +499,7 @@ class Electron extends Phaser.GameObjects.Sprite {
     }
     updateOffset(current) {
         this.prevOffset = this.offset;
-        this.offset += current * ELECTRON_SPEED;
+        this.offset += current * this.scene.ELECTRON_SPEED * (this.scene.ELECTRONS_ARE_POSITIVE ? 1 : -1);
         if ((this.offset < 0) != (this.prevOffset < 0) && this.component.causesElectronVoltageGain) {
             this.gainVoltage(current > 0);
         }
@@ -483,7 +534,7 @@ class Electron extends Phaser.GameObjects.Sprite {
         var text = ((diff > 0) ? "+" : "") + diff.toFixed(1) + "V";
         var tb = this.scene.add.text(this.x - 5, this.y - 5, text, {
             fill: ELECTRON_COLOR,
-            fontSize: "12px",
+            fontSize: this.scene.FONT_SIZE.toString() + "px",
             fontFamily: FONT
         });
         var tween = this.scene.tweens.add({
@@ -511,16 +562,17 @@ class Fire extends Phaser.GameObjects.Sprite {
 class myGame extends Phaser.Game {
     constructor() {
         let config = {
-            type: Phaser.AUTO,
-            width: 1200,
+            type: Phaser.CANVAS,
+            width: 850,
             height: 750,
             autoFocus: true,
             backgroundColor: '#ffffff',
             parent: 'gameDiv',
-            url: 'http//url.to.game',
-            title: 'Title Goes Here',
+            url: 'http//www.teachometer.co.uk/blue-circuit-simulator.html',
+            title: 'Blue Circuit simulator',
             version: '0.0.1',
-            scene: [new Scene1()]
+            scene: [new Scene1()],
+            canvas: document.getElementById("game")
         };
         super(config);
     }
@@ -531,9 +583,11 @@ class HoverText extends Phaser.GameObjects.Text {
     constructor(scene, x, y, text, textStyle, component) {
         super(scene, x, y, text, textStyle);
         this.scene.add.existing(this);
+        this.scene = scene;
         this.setInteractive();
         this.setDepth(100);
         this.component = component;
+        this.scene.textObjects.push(this);
         this.on("pointerover", (pointer) => {
             if (!this.hoverRect) {
                 var bounds = this.getBounds();
@@ -553,11 +607,15 @@ class HoverText extends Phaser.GameObjects.Text {
             if (this.hoverRect) {
                 this.hoverRect.destroy();
             }
+            removeItemFromArray(this, this.scene.textObjects);
         });
     }
     onClick() {
-        var value = window.prompt("set value for component (unit is " + this.component.unit + ")", Math.abs(this.component.value).toString());
-        this.component.setValue(value);
+        var value = window.prompt("set value for component in " + this.component.unit, Math.abs(this.component.value).toString());
+        if (isNumeric(value)) {
+            this.component.setValue(value);
+        }
+        ;
     }
 }
 class Scene1 extends Phaser.Scene {
@@ -572,8 +630,17 @@ class Scene1 extends Phaser.Scene {
                 }
             },
         });
-        this.components = [];
+        this.activeComponents = [];
+        this.dummyComponents = [];
+        this.textObjects = [];
+        this.electrons = [];
         this.seed = 0;
+        this.ELECTRONS_ARE_POSITIVE = false;
+        this.ELECTRON_SPEED = 5;
+        this.NUMBER_OF_ELECTRONS = 5;
+        this.FONT_SIZE = 12;
+        this.SHOW_STUD_VOLTAGES = false;
+        this.SHOW_STUDS = true;
     }
     preload() {
         this.load.image("resistor", "assets/resistor.png");
@@ -603,24 +670,22 @@ class Scene1 extends Phaser.Scene {
                 this.studGrid[i][j] = new Stud(this, STUD_GRID_START_X + i * 125, STUD_GRID_START_Y + j * 125);
             }
         }
-        var spawnX = 1000;
-        var spawnY = 150;
-        new Resistor(this, spawnX, spawnY);
-        new Wire(this, spawnX, spawnY += SPAWN_VERTICAL_SPACING);
-        new Cell(this, spawnX, spawnY += SPAWN_VERTICAL_SPACING);
-        new Capacitor(this, spawnX, spawnY += SPAWN_VERTICAL_SPACING);
-        new Switch(this, spawnX, spawnY += SPAWN_VERTICAL_SPACING);
-        new Bulb(this, spawnX, spawnY += SPAWN_VERTICAL_SPACING);
-        new Voltmeter(this, spawnX, spawnY += SPAWN_VERTICAL_SPACING);
-        new Ammeter(this, spawnX, spawnY += SPAWN_VERTICAL_SPACING);
+        new Resistor(this, SPAWN_X, SPAWN_Y);
+        new Wire(this, SPAWN_X, SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Cell(this, SPAWN_X, SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Capacitor(this, SPAWN_X, SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Switch(this, SPAWN_X, SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Bulb(this, SPAWN_X, SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Voltmeter(this, SPAWN_X, SPAWN_Y += SPAWN_VERTICAL_SPACING);
+        new Ammeter(this, SPAWN_X, SPAWN_Y += SPAWN_VERTICAL_SPACING);
     }
     update() {
-        if (this.components.length > 0) {
+        if (this.activeComponents.length > 0) {
             for (var i = 0; i < CIRCUIT_UPDATES_PER_FRAME; i++) {
-                this.seed = randomOrderForEach(this.seed, this.components, c => c.updateStuds());
+                this.seed = randomOrderForEach(this.seed, this.activeComponents, c => c.updateStuds());
             }
         }
-        this.components.forEach(c => {
+        this.activeComponents.forEach(c => {
             c.updateElectrons();
         });
         var minStud = this.studGrid[0][0];
@@ -647,6 +712,41 @@ class Scene1 extends Phaser.Scene {
             });
         });
     }
+    setNumberOfElectrons(value) {
+        this.NUMBER_OF_ELECTRONS = value;
+        for (var c of this.activeComponents) {
+            c.electrons.forEach(e => { e.destroy(); });
+            c.electrons = [];
+            c.createNewElectrons();
+        }
+    }
+    setFontSize(value) {
+        this.FONT_SIZE = value;
+        for (var t of this.textObjects) {
+            t.setFontSize(this.FONT_SIZE);
+        }
+    }
+    setStudVoltageVisible(value) {
+        this.SHOW_STUD_VOLTAGES = value;
+        for (var i = 0; i < GRID_NUM_COLS; i++) {
+            for (var j = 0; j < GRID_NUM_ROWS; j++) {
+                if (this.SHOW_STUD_VOLTAGES) {
+                    this.studGrid[i][j].voltageText.setVisible(this.studGrid[i][j].hasAnyComponents());
+                }
+                else {
+                    this.studGrid[i][j].voltageText.setVisible(false);
+                }
+            }
+        }
+    }
+    setStudVisible(value) {
+        this.SHOW_STUDS = value;
+        for (var i = 0; i < GRID_NUM_COLS; i++) {
+            for (var j = 0; j < GRID_NUM_ROWS; j++) {
+                this.studGrid[i][j].setVisible(this.SHOW_STUDS);
+            }
+        }
+    }
 }
 class Stud extends Phaser.GameObjects.Sprite {
     constructor(scene, x, y) {
@@ -658,11 +758,13 @@ class Stud extends Phaser.GameObjects.Sprite {
             "top": null, "bottom": null, "right": null, "left": null
         };
         scene.add.existing(this);
+        this.scene = scene;
         this.voltageText = this.scene.add.text(this.x - 25, this.y - 20, "", {
             fill: "#000",
-            fontSize: "12px",
+            fontSize: this.scene.FONT_SIZE.toString() + "px",
             fontFamily: FONT
         }).setVisible(false);
+        this.scene.textObjects.push(this.voltageText);
     }
     get voltage() { return this._charge / this.capacitance; }
     get charge() { return this._charge; }
@@ -683,34 +785,43 @@ class Stud extends Phaser.GameObjects.Sprite {
         if (!c[dir]) {
             this.connectedComponents[dir] = c;
         }
-        this.voltageText.setVisible(true);
+        if (this.scene.SHOW_STUD_VOLTAGES) {
+            this.voltageText.setVisible(true);
+        }
     }
     removeComponent(c) {
         var dir = this.getComponentDirection(c);
         this.connectedComponents[dir] = null;
-        if (!objectSome(this.connectedComponents, item => item != null)) {
+        if (!this.hasAnyComponents()) {
             this.voltageText.setVisible(false);
         }
+    }
+    hasAnyComponents() {
+        return objectSome(this.connectedComponents, item => item != null);
     }
     nextComponentForElectron(extraOffset) {
         var ret = [];
         var currents = [];
-        if (this.connectedComponents["top"] && this.connectedComponents["top"].prevCurrent < 0) {
+        if (this.connectedComponents["top"] &&
+            (this.scene.ELECTRONS_ARE_POSITIVE ? this.connectedComponents["top"].prevCurrent < 0 : this.connectedComponents["top"].prevCurrent > 0)) {
             ret.push([this.connectedComponents["top"], 62.5 - extraOffset]);
             currents.push(Math.abs(this.connectedComponents["top"].prevCurrent));
         }
         ;
-        if (this.connectedComponents["right"] && this.connectedComponents["right"].prevCurrent > 0) {
+        if (this.connectedComponents["right"] &&
+            (this.scene.ELECTRONS_ARE_POSITIVE ? this.connectedComponents["right"].prevCurrent > 0 : this.connectedComponents["right"].prevCurrent < 0)) {
             ret.push([this.connectedComponents["right"], -62.5 + extraOffset]);
             currents.push(Math.abs(this.connectedComponents["right"].prevCurrent));
         }
         ;
-        if (this.connectedComponents["bottom"] && this.connectedComponents["bottom"].prevCurrent > 0) {
+        if (this.connectedComponents["bottom"] &&
+            (this.scene.ELECTRONS_ARE_POSITIVE ? this.connectedComponents["bottom"].prevCurrent > 0 : this.connectedComponents["bottom"].prevCurrent < 0)) {
             ret.push([this.connectedComponents["bottom"], -62.5 + extraOffset]);
             currents.push(Math.abs(this.connectedComponents["bottom"].prevCurrent));
         }
         ;
-        if (this.connectedComponents["left"] && this.connectedComponents["left"].prevCurrent < 0) {
+        if (this.connectedComponents["left"] &&
+            (this.scene.ELECTRONS_ARE_POSITIVE ? this.connectedComponents["left"].prevCurrent < 0 : this.connectedComponents["left"].prevCurrent > 0)) {
             ret.push([this.connectedComponents["left"], 62.5 - extraOffset]);
             currents.push(Math.abs(this.connectedComponents["left"].prevCurrent));
         }
